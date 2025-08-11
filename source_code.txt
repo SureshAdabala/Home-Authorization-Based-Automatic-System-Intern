@@ -1,0 +1,74 @@
+import cv2
+import face_recognition
+import RPi.GPIO as GPIO
+import os
+import time
+
+# Setup GPIO for relay control
+
+RELAY_PIN = 17 # Adjust GPIO pin as necessary
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(RELAY_PIN, GPIO.OUT)
+def load_known_faces():
+ known_face_encodings = []
+ known_face_names = []
+
+ # Load images from the dataset folder
+ for filename in os.listdir('dataset'):
+ if filename.endswith('.jpg'):
+ image = face_recognition.load_image_file(f"dataset/{filename}")
+ encoding = face_recognition.face_encodings(image)[0]
+ known_face_encodings.append(encoding)
+ known_face_names.append(filename.split('_')[0]) # Extract name from filename
+ return known_face_encodings, known_face_names
+
+def control_device(action):
+ if action == 'on':
+ GPIO.output(RELAY_PIN, GPIO.HIGH) # Turn on the device
+ print("Device turned ON")
+ elif action == 'off':
+ GPIO.output(RELAY_PIN, GPIO.LOW) # Turn off the device
+ print("Device turned OFF")
+
+def main():
+ known_face_encodings, known_face_names = load_known_faces()
+ cam = cv2.VideoCapture(0)
+ while True:
+ ret, frame = cam.read()
+ if not ret:
+ print("Failed to grab frame")
+ break
+
+ # Find all the faces and face encodings in the current frame
+ face_locations = face_recognition.face_locations(frame)
+ face_encodings = face_recognition.face_encodings(frame, face_locations)
+ for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
+ matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
+ name = "Unknown"
+
+ # Use the known face with the smallest distance to the new face
+ face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
+ best_match_index = np.argmin(face_distances)
+ if matches[best_match_index]:
+ name = known_face_names[best_match_index]
+
+ # Draw a rectangle around the face and label
+cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+ cv2.putText(frame, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,
+255, 255), 2)
+
+ # If recognized, control the device
+ if name != "Unknown":
+ control_device('on') # Turn on the device
+ time.sleep(5) # Keep it on for 5 seconds
+ control_device('off') # Turn off the device
+
+ # Display the resulting frame
+ cv2.imshow('Video', frame)
+ if cv2.waitKey(1) & 0xFF == ord('q'):
+ break
+ cam.release()
+ cv2.destroyAllWindows()
+ GPIO.cleanup()
+if __name__ == "__main__":
+ main()
